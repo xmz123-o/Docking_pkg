@@ -1,0 +1,113 @@
+/**:
+  ros__parameters:
+    planner_mode: "frenet"   # 可选 cartesian 或 frenet
+    planning_frame: "ego_base"
+    body_frame_planning: true
+
+    ego:
+      yaw_rate_filter_alpha: 0.2
+      max_yaw_rate: 2.0
+      yaw_rate_deadband: 0.01
+
+    position_processor:
+      camera_x: 0.35
+      camera_y: 0.0
+      camera_yaw: 0.0
+      tag_x: -0.26
+      tag_y: 0.0
+      tag_yaw: 0.0
+      min_range: 0.05
+      max_range: 50.0
+    control_period: 0.05
+    publish_markers: true
+
+    target:
+      measurement_noise_position: 0.0001
+      process_noise_position: 0.02
+      process_noise_velocity: 2.0
+      max_plausible_velocity: 3.0
+      min_speed_for_heading: 0.08
+      omega_window_time: 2.5
+      omega_filter_alpha: 0.08
+      omega_deadband: 0.04
+      max_plausible_omega: 0.8
+      use_measured_orientation: false
+      velocity_filter_alpha: 0.06
+      velocity_max: 8.0
+      velocity_min_speed_for_heading: 0.03
+      warmup_cycles: 10
+
+    prediction:
+      dt: 0.1
+      horizon: 8.0
+      min_speed_for_ctrv: 0.02
+      max_abs_omega: 0.8
+      omega_deadband: 0.04
+
+    planning:
+      reference_sample_count: 80
+      reference_derivative_scale: 1.0
+      local_sample_count: 80
+      max_ego_speed: 1.0
+      max_ego_accel: 0.8
+      max_ego_decel: 1.0
+      min_docking_time: 0.2
+      max_docking_time: 10.0
+      prealign_distance: 0.2
+      prealign_activation_distance: 1.2
+      docking_goal_lead: 0.08
+      path_length_margin: 1.05
+
+    speed:
+      max_accel: 0.8
+      max_decel: 1.0
+      integration_dt: 0.02
+
+    docking:
+      tracking_distance_extra: 1.70
+      approach_distance_extra: 0.70
+      align_distance_extra: 0.32
+      final_dock_distance_extra: 0.12
+      docked_distance_extra: 0.02
+      docked_speed: 0.08
+      final_heading_error: 0.35
+      docked_heading_error: 0.25
+      final_lateral_error: 0.20
+      docked_lateral_error: 0.15
+      tracking_speed: 1.0
+      approach_speed: 0.6
+      align_speed: 0.35
+      final_speed: 0.12
+      docked_hold_speed: 0.0
+      desired_center_distance: 0.52
+      docked_longitudinal_error: 0.02
+      final_closure_speed: 0.04
+      docked_release_margin: 0.30
+      max_ego_speed: 1.0
+      catch_up_gain: 0.8
+      max_closure_speed: 0.6
+      min_closure_speed: 0.03
+
+    vehicle:
+      target_length: 0.52
+      ego_length: 0.52
+      cone_bus_length: 0.08
+      docking_depth: 0.05
+      wheel_radius: 0.254
+      wheel_track: 0.60
+
+    control:
+      max_linear: 1.0
+      max_angular: 1.2
+      max_wheel_rad_s: 8.0
+      lookahead_distance: 0.12
+      lookahead_time: 0.30
+      max_lookahead_distance: 0.30
+      path_heading_gain: 2.5
+      path_feedforward_gain: 0.8
+      body_k_along: 1.2
+      body_k_along_vel: 0.8
+      body_k_heading: 2.5
+      body_k_lateral: 1.5
+      body_k_lateral_vel: 0.6
+      body_max_closure: 0.30
