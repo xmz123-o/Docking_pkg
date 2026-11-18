@@ -41,8 +41,32 @@ DockingPlannerNode::DockingPlannerNode()
   planning_frame_ = this->declare_parameter<std::string>("planning_frame", "ego_base");
   body_frame_planning_ =
     this->declare_parameter<bool>("body_frame_planning", true);
+  compensate_ego_rotation_ =
+    this->declare_parameter<bool>("ego.compensate_frame_rotation", true);
+  hold_zero_when_docked_ =
+    this->declare_parameter<bool>("docking.hold_zero_when_docked", false);
+  use_world_heading_visualization_ =
+    this->declare_parameter<bool>(
+      "target.use_world_heading_visualization", false);
+  target_visual_world_heading_ =
+    this->declare_parameter<double>("target.visual_world_heading", 0.0);
+  use_world_heading_for_control_ =
+    this->declare_parameter<bool>(
+      "target.use_world_heading_for_control", false);
+  target_control_world_heading_ =
+    this->declare_parameter<double>("target.control_world_heading", 0.0);
+  target_heading_control_distance_ =
+    this->declare_parameter<double>("target.heading_control_distance", 1.2);
   target_warmup_cycles_ =
     this->declare_parameter<int>("target.warmup_cycles", 10);
+  target_body_length_ =
+    this->declare_parameter<double>("vehicle.target_length", 0.52);
+  ego_length_ =
+    this->declare_parameter<double>("vehicle.ego_length", 0.52);
+  target_body_width_ =
+    this->declare_parameter<double>("vehicle.target_width", 0.45);
+  target_body_height_ =
+    this->declare_parameter<double>("vehicle.target_height", 0.40);
 
   PositionProcessor::Params position_params;
   position_params.camera_x =
@@ -51,8 +75,13 @@ DockingPlannerNode::DockingPlannerNode()
     this->declare_parameter<double>("position_processor.camera_y", 0.0);
   position_params.camera_yaw =
     this->declare_parameter<double>("position_processor.camera_yaw", 0.0);
-  position_params.tag_x =
+  const bool tag_on_rear_face =
+    this->declare_parameter<bool>("position_processor.tag_on_rear_face", true);
+  const double configured_tag_x =
     this->declare_parameter<double>("position_processor.tag_x", -0.26);
+  position_params.tag_x = tag_on_rear_face
+    ? -0.5 * target_body_length_
+    : configured_tag_x;
   position_params.tag_y =
     this->declare_parameter<double>("position_processor.tag_y", 0.0);
   position_params.tag_yaw =
@@ -80,8 +109,13 @@ DockingPlannerNode::DockingPlannerNode()
   filter_params.min_speed_for_heading =
     this->declare_parameter<double>("target.velocity_min_speed_for_heading", 0.03);
   target_velocity_filter_ = TargetVelocityFilter(filter_params);
-  const double desired_center_distance =
+  const double configured_center_distance =
     this->declare_parameter<double>("docking.desired_center_distance", 0.52);
+  const bool auto_face_contact =
+    this->declare_parameter<bool>("docking.auto_face_contact", true);
+  const double desired_center_distance = auto_face_contact
+    ? 0.5 * (target_body_length_ + ego_length_)
+    : configured_center_distance;
   control_period_ = this->declare_parameter<double>("control_period", 0.05);
   publish_markers_ = this->declare_parameter<bool>("publish_markers", true);
 
@@ -122,10 +156,8 @@ DockingPlannerNode::DockingPlannerNode()
   predictor_ = TargetPredictor(predictor_params);
 
   ReferenceLineGenerator::Params reference_params;
-  reference_params.target_length =
-    this->declare_parameter<double>("vehicle.target_length", 0.52);
-  reference_params.ego_length =
-    this->declare_parameter<double>("vehicle.ego_length", 0.52);
+  reference_params.target_length = target_body_length_;
+  reference_params.ego_length = ego_length_;
   reference_params.cone_bus_length =
     this->declare_parameter<double>("vehicle.cone_bus_length", 0.08);
   reference_params.docking_depth =
@@ -247,6 +279,57 @@ DockingPlannerNode::DockingPlannerNode()
     this->declare_parameter<double>("control.path_heading_gain", 2.5);
   controller_params.path_feedforward_gain =
     this->declare_parameter<double>("control.path_feedforward_gain", 0.8);
+  controller_params.body_k_along =
+    this->declare_parameter<double>("control.body_k_along", 1.2);
+  controller_params.body_k_along_vel =
+    this->declare_parameter<double>("control.body_k_along_vel", 0.8);
+  controller_params.body_k_heading =
+    this->declare_parameter<double>("control.body_k_heading", 2.5);
+  controller_params.body_k_lateral =
+    this->declare_parameter<double>("control.body_k_lateral", 1.5);
+  controller_params.body_k_lateral_vel =
+    this->declare_parameter<double>("control.body_k_lateral_vel", 0.6);
+  controller_params.body_max_closure =
+    this->declare_parameter<double>("control.body_max_closure", 0.30);
+  controller_params.body_terminal_transition_distance =
+    this->declare_parameter<double>("control.body_terminal_transition_distance", 0.25);
+  controller_params.body_terminal_heading_gain =
+    this->declare_parameter<double>("control.body_terminal_heading_gain", 1.2);
+  controller_params.body_terminal_lateral_gain =
+    this->declare_parameter<double>("control.body_terminal_lateral_gain", 0.8);
+  controller_params.body_terminal_yaw_rate_gain =
+    this->declare_parameter<double>("control.body_terminal_yaw_rate_gain", 0.35);
+  controller_params.body_alignment_speed =
+    this->declare_parameter<double>("control.body_alignment_speed", 0.20);
+  controller_params.body_alignment_approach_speed =
+    this->declare_parameter<double>(
+      "control.body_alignment_approach_speed", 0.40);
+  controller_params.body_alignment_bearing_gain =
+    this->declare_parameter<double>("control.body_alignment_bearing_gain", 0.8);
+  controller_params.body_alignment_yaw_rate_gain =
+    this->declare_parameter<double>("control.body_alignment_yaw_rate_gain", 0.30);
+  controller_params.body_alignment_heading_tolerance =
+    this->declare_parameter<double>(
+      "control.body_alignment_heading_tolerance", 0.08);
+  controller_params.body_alignment_lateral_tolerance =
+    this->declare_parameter<double>(
+      "control.body_alignment_lateral_tolerance", 0.04);
+  controller_params.body_alignment_standoff_offset =
+    this->declare_parameter<double>(
+      "control.body_alignment_standoff_offset", 0.18);
+  controller_params.body_alignment_standoff_tolerance =
+    this->declare_parameter<double>(
+      "control.body_alignment_standoff_tolerance", 0.04);
+  controller_params.body_follow_max_speed =
+    this->declare_parameter<double>("control.body_follow_max_speed", 0.50);
+  controller_params.body_follow_max_angular =
+    this->declare_parameter<double>("control.body_follow_max_angular", 0.35);
+  controller_params.body_follow_heading_gain =
+    this->declare_parameter<double>("control.body_follow_heading_gain", 0.80);
+  controller_params.body_follow_bearing_gain =
+    this->declare_parameter<double>("control.body_follow_bearing_gain", 0.60);
+  controller_params.body_follow_yaw_rate_gain =
+    this->declare_parameter<double>("control.body_follow_yaw_rate_gain", 0.30);
   controller_ = DifferentialController(controller_params);
 
   ego_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
@@ -282,6 +365,12 @@ DockingPlannerNode::DockingPlannerNode()
   last_cycle_time_ = this->now();
   last_status_log_time_ = this->now();
   previous_ego_ = ego_pose_;
+  RCLCPP_INFO(
+    this->get_logger(),
+    "Docking geometry: rear_tag=%s tag_x=%.3f center_distance=%.3f",
+    tag_on_rear_face ? "true" : "false",
+    position_params.tag_x,
+    desired_center_distance);
   RCLCPP_INFO(this->get_logger(), "Docking planner started, mode=%s", planner_mode_.c_str());
 }
 
@@ -351,6 +440,13 @@ void DockingPlannerNode::onEgoTwist(
   ego_twist_omega_ = msg->twist.angular.z;
   ego_twist_stamp_ = msg->header.stamp;
   have_ego_twist_ = true;
+
+  // 车体系规划不需要自车绝对位置；收到轮速/横摆角速度后即可认为自车状态就绪。
+  if (body_frame_planning_) {
+    ego_pose_ = Pose2D{0.0, 0.0, 0.0};
+    ego_stamp_ = msg->header.stamp;
+    have_ego_ = true;
+  }
 }
 
 void DockingPlannerNode::onTargetTwist(
@@ -387,12 +483,21 @@ void DockingPlannerNode::onTimer()
     if (have_ego_yaw_) {
       ego_compensator_.setEgoYaw(ego_yaw_stamp_.seconds(), ego_yaw_);
     }
-    const double ego_omega = have_ego_yaw_
+    double ego_omega = have_ego_yaw_
       ? ego_compensator_.egoOmega()
       : ego_twist_omega_;
-    const double yaw_estimate = target_velocity_filter_.state().initialized
-      ? target_velocity_filter_.state().yaw
-      : 0.0;
+    if (!compensate_ego_rotation_) {
+      // 真实相机 + 仿真自车混合模式下，相机没有随虚拟自车转动。
+      // 此时若继续使用仿真横摆角做 omega × p 补偿，会把静止目标
+      // 计算成约 omega * distance 的虚假速度。
+      ego_omega = 0.0;
+    }
+    const double yaw_estimate = use_world_heading_for_control_
+      ? normalizeAngle(target_control_world_heading_ - ego_yaw_)
+      : (
+        target_velocity_filter_.state().initialized
+        ? target_velocity_filter_.state().yaw
+        : 0.0);
 
     Pose2D target_in_ego;
     if (position_processor_.process(qr_position_, yaw_estimate, &target_in_ego)) {
@@ -461,6 +566,24 @@ void DockingPlannerNode::onTimer()
   Trajectory predicted;
   if (body_frame_planning_) {
     target = target_velocity_filter_.state();
+    if (use_world_heading_for_control_) {
+      const double true_target_yaw = normalizeAngle(
+        target_control_world_heading_ - ego_yaw_);
+      const double center_distance = std::hypot(target.x, target.y);
+      if (!near_alignment_active_ &&
+        center_distance < target_heading_control_distance_)
+      {
+        near_alignment_active_ = true;
+        near_alignment_phase_ = 0;
+      } else if (near_alignment_active_ &&
+        center_distance > target_heading_control_distance_ + 0.30)
+      {
+        near_alignment_active_ = false;
+        near_alignment_phase_ = 0;
+      }
+      target.yaw = near_alignment_active_ ? true_target_yaw : 0.0;
+      target.omega = 0.0;
+    }
     predicted = predictor_.predictRelative(target, now_seconds);
   } else {
     const TargetState target_measured = estimator_.state();
@@ -473,6 +596,11 @@ void DockingPlannerNode::onTimer()
 
   const DockingState docking_state = state_machine_.update(
     ego_pose_, target, ego_speed);
+  if (body_frame_planning_ &&
+    docking_state.phase == DockingState::Phase::kDocked)
+  {
+    post_dock_follow_ = true;
+  }
 
   Path local_path;
   Trajectory trajectory;
@@ -480,31 +608,20 @@ void DockingPlannerNode::onTimer()
   WheelCommand command;
 
   if (body_frame_planning_) {
-    // 车体系第一版：生成从自车原点到当前对接点的稳定直线参考路径。
+    // 车体系模式：从当前自车原点向目标后方对接位姿生成五次样条。
     const double desired = reference_generator_.desired_center_distance();
     const double goal_x = target.x - desired * std::cos(target.yaw);
     const double goal_y = target.y - desired * std::sin(target.yaw);
-    const double goal_yaw = std::atan2(goal_y, goal_x);
+    const double goal_yaw = target.yaw;
 
-    const int samples = 40;
-    double s = 0.0;
-    double prev_x = 0.0;
-    double prev_y = 0.0;
-    for (int i = 0; i <= samples; ++i) {
-      const double u = static_cast<double>(i) / static_cast<double>(samples);
-      PathPoint point;
-      point.x = goal_x * u;
-      point.y = goal_y * u;
-      point.yaw = goal_yaw;
-      if (i > 0) {
-        s += distance(prev_x, prev_y, point.x, point.y);
-      }
-      point.s = s;
-      point.kappa = 0.0;
-      local_path.push_back(point);
-      prev_x = point.x;
-      prev_y = point.y;
-    }
+    DockingGoal body_goal;
+    body_goal.valid = true;
+    body_goal.time = now_seconds;
+    body_goal.pose = Pose2D{goal_x, goal_y, goal_yaw};
+    body_goal.speed = target.speed;
+    body_goal.omega = target.omega;
+    local_path = reference_generator_.generateBodyRelativePath(
+      ego_pose_, body_goal);
 
     double t = 0.0;
     for (const auto & point : local_path) {
@@ -523,15 +640,30 @@ void DockingPlannerNode::onTimer()
     }
 
     reference.path = local_path;
-    reference.docking_goal.valid = true;
+    reference.docking_goal = body_goal;
     reference.docking_goal.time = now_seconds + std::max(
       0.2, local_path.empty() ? 0.0 : local_path.back().s /
       std::max(0.2, ego_speed));
-    reference.docking_goal.pose = Pose2D{goal_x, goal_y, goal_yaw};
-    reference.docking_goal.speed = target.speed;
-    reference.docking_goal.omega = target.omega;
 
-    command = controller_.computeBodyRelative(ego_speed, target, desired);
+    if (near_alignment_active_) {
+      command = controller_.computeBodyAlignment(
+        ego_speed, target, desired, ego_twist_omega_,
+        &near_alignment_phase_);
+    } else {
+      command = controller_.computeBodyRelativePath(
+        ego_speed, target, local_path, desired, ego_twist_omega_);
+    }
+    if (post_dock_follow_ &&
+      docking_state.phase != DockingState::Phase::kDocked)
+    {
+      command = controller_.computePostDockFollow(
+        ego_speed, target, desired, ego_twist_omega_);
+    }
+    if (hold_zero_when_docked_ &&
+      docking_state.phase == DockingState::Phase::kDocked)
+    {
+      command = controller_.fromTwist(0.0, 0.0);
+    }
   } else {
     reference = reference_generator_.generate(ego_pose_, ego_speed, predicted);
     local_path = local_planner_.plan(ego_pose_, reference.path);
@@ -565,9 +697,9 @@ void DockingPlannerNode::onTimer()
       : -1.0;
     RCLCPP_INFO(
       this->get_logger(),
-      "[%s] target_v=(%.2f,%.2f) target_speed=%.2f ego_speed=%.2f closure=%.2f dist=%.2f lat_err=%.2f yaw_err=%.2f td=%.2f arrival=%.2f a=%.2f wheel=(%.2f, %.2f)",
+      "[%s] target_v=(%.2f,%.2f) target_speed=%.2f target_yaw=%.2f ego_speed=%.2f closure=%.2f dist=%.2f lat_err=%.2f yaw_err=%.2f td=%.2f arrival=%.2f a=%.2f wheel=(%.2f, %.2f)",
       DockingStateMachine::phaseName(docking_state.phase).c_str(),
-      target.vx, target.vy, target.speed, ego_speed,
+      target.vx, target.vy, target.speed, target.yaw, ego_speed,
       docking_state.closing_speed,
       docking_state.center_distance,
       docking_state.lateral_error,
@@ -645,6 +777,31 @@ void DockingPlannerNode::publishTrajectory(
     goal.pose.position.y = target.y - std::sin(target.yaw) * docking_distance;
     goal.pose.orientation = quaternionFromYaw(target.yaw);
     markers.markers.push_back(goal);
+  }
+
+  if (target.initialized) {
+    visualization_msgs::msg::Marker target_body;
+    target_body.header = path_msg.header;
+    target_body.ns = "target_body";
+    target_body.id = 4;
+    target_body.type = visualization_msgs::msg::Marker::CUBE;
+    target_body.scale.x = target_body_length_;
+    target_body.scale.y = target_body_width_;
+    target_body.scale.z = target_body_height_;
+    target_body.color.r = 0.90;
+    target_body.color.g = 0.25;
+    target_body.color.b = 0.20;
+    target_body.color.a = 0.85;
+    target_body.pose.position.x = target.x;
+    target_body.pose.position.y = target.y;
+    target_body.pose.position.z = target_body_height_ / 2.0;
+    double target_visual_yaw = target.yaw;
+    if (body_frame_planning_ && use_world_heading_visualization_) {
+      target_visual_yaw = normalizeAngle(
+        target_visual_world_heading_ - ego_yaw_);
+    }
+    target_body.pose.orientation = quaternionFromYaw(target_visual_yaw);
+    markers.markers.push_back(target_body);
   }
 
   if (!predicted_target.empty()) {

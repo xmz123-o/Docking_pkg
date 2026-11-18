@@ -191,8 +191,8 @@ public:
     const double ego_x = this->declare_parameter<double>("sim.ego_x", 0.0);
     const double ego_y = this->declare_parameter<double>("sim.ego_y", 0.0);
     const double ego_yaw = this->declare_parameter<double>("sim.ego_yaw", 0.0);
-    const double target_x = this->declare_parameter<double>("sim.target_x", 2.5);
-    const double target_y = this->declare_parameter<double>("sim.target_y", 0.5);
+    const double target_x = this->declare_parameter<double>("sim.target_x", 7.0);
+    const double target_y = this->declare_parameter<double>("sim.target_y", 1.8);
     const double target_yaw = this->declare_parameter<double>("sim.target_yaw", 0.0);
     target_speed_ = this->declare_parameter<double>("sim.target_speed", 0.35);
     target_yaw_rate_ = this->declare_parameter<double>("sim.target_yaw_rate", 0.08);
@@ -209,6 +209,9 @@ public:
     cone_bus_ = this->declare_parameter<double>("sim.cone_bus", 0.08);
     qr_pose_noise_std_ =
       this->declare_parameter<double>("sim.qr_pose_noise_std", 0.005);
+    publish_qr_ = this->declare_parameter<bool>("sim.publish_qr", true);
+    publish_simulated_target_ =
+      this->declare_parameter<bool>("sim.publish_simulated_target", true);
     camera_x_ = this->declare_parameter<double>("sim.camera_x", 0.35);
     camera_y_ = this->declare_parameter<double>("sim.camera_y", 0.0);
     camera_z_ = this->declare_parameter<double>("sim.camera_z", 0.20);
@@ -270,10 +273,12 @@ private:
     const double dt = 1.0 / std::max(5.0, publish_hz_);
     const rclcpp::Time stamp = this->now();
 
-    target_true_.yaw += target_yaw_rate_ * dt;
-    target_true_.yaw = normalizeAngle(target_true_.yaw);
-    target_true_.x += target_speed_ * std::cos(target_true_.yaw) * dt;
-    target_true_.y += target_speed_ * std::sin(target_true_.yaw) * dt;
+    if (publish_simulated_target_) {
+      target_true_.yaw += target_yaw_rate_ * dt;
+      target_true_.yaw = normalizeAngle(target_true_.yaw);
+      target_true_.x += target_speed_ * std::cos(target_true_.yaw) * dt;
+      target_true_.y += target_speed_ * std::sin(target_true_.yaw) * dt;
+    }
 
     const double left_linear = left_wheel_ * wheel_radius_;
     const double right_linear = right_wheel_ * wheel_radius_;
@@ -287,29 +292,32 @@ private:
     // 模拟定位：规划器只接收带少量噪声的测量。
     // 目标测量刻意不提供有意义的朝向。
     const Pose2D ego_measurement = addMeasurementNoise(ego_true_, true);
-    Pose2D target_measurement = addMeasurementNoise(target_true_, false);
-    target_measurement.yaw = 0.0;
-
     publishPose(ego_pub_, stamp, ego_measurement);
-    publishPose(target_pub_, stamp, target_measurement);
+    if (publish_simulated_target_) {
+      Pose2D target_measurement = addMeasurementNoise(target_true_, false);
+      target_measurement.yaw = 0.0;
+      publishPose(target_pub_, stamp, target_measurement);
+      publishTwist(
+        target_twist_pub_,
+        stamp,
+        target_speed_ * std::cos(target_true_.yaw),
+        target_speed_ * std::sin(target_true_.yaw),
+        target_yaw_rate_);
+    }
     publishTwist(
       ego_twist_pub_,
       stamp,
       linear * std::cos(ego_true_.yaw),
       linear * std::sin(ego_true_.yaw),
       angular);
-    publishTwist(
-      target_twist_pub_,
-      stamp,
-      target_speed_ * std::cos(target_true_.yaw),
-      target_speed_ * std::sin(target_true_.yaw),
-      target_yaw_rate_);
     std_msgs::msg::Float64 yaw_msg;
     yaw_msg.data = ego_true_.yaw;
     ego_yaw_pub_->publish(yaw_msg);
 
     publishTransforms(stamp);
-    publishQrPose(stamp);
+    if (publish_qr_ && publish_simulated_target_) {
+      publishQrPose(stamp);
+    }
     publishMarkers(stamp);
   }
 
@@ -366,28 +374,29 @@ private:
     markers.markers.push_back(makeBodyMarker(
       "ego", 0, ego_true_, body_length_, body_width_, body_height_,
       makeColor(0.15f, 0.85f, 0.35f, 0.9f)));
-    markers.markers.push_back(makeBodyMarker(
-      "target", 0, target_true_, body_length_, body_width_, body_height_,
-      makeColor(0.90f, 0.25f, 0.20f, 0.9f)));
-
     markers.markers.push_back(makeInterfaceMarker(
       "ego", 1, ego_true_, true, body_length_, cone_bus_,
       makeColor(1.0f, 0.85f, 0.1f, 1.0f)));
-    markers.markers.push_back(makeInterfaceMarker(
-      "target", 1, target_true_, false, body_length_, cone_bus_,
-      makeColor(0.35f, 0.35f, 0.40f, 1.0f)));
 
     markers.markers.push_back(makeArrowMarker(
       "ego", 2, ego_true_, 0.35, 0.035,
       makeColor(0.0f, 0.0f, 0.0f, 0.6f)));
-    markers.markers.push_back(makeArrowMarker(
-      "target", 2, target_true_, 0.35, 0.035,
-      makeColor(1.0f, 1.0f, 1.0f, 0.8f)));
 
     markers.markers.push_back(makeTextMarker(
       "ego", 3, ego_true_, "Ego", makeColor(0.1f, 0.7f, 0.3f)));
-    markers.markers.push_back(makeTextMarker(
-      "target", 3, target_true_, "Target", makeColor(0.9f, 0.2f, 0.2f)));
+    if (publish_simulated_target_) {
+      markers.markers.push_back(makeBodyMarker(
+        "target", 0, target_true_, body_length_, body_width_, body_height_,
+        makeColor(0.90f, 0.25f, 0.20f, 0.9f)));
+      markers.markers.push_back(makeInterfaceMarker(
+        "target", 1, target_true_, false, body_length_, cone_bus_,
+        makeColor(0.35f, 0.35f, 0.40f, 1.0f)));
+      markers.markers.push_back(makeArrowMarker(
+        "target", 2, target_true_, 0.35, 0.035,
+        makeColor(1.0f, 1.0f, 1.0f, 0.8f)));
+      markers.markers.push_back(makeTextMarker(
+        "target", 3, target_true_, "Target", makeColor(0.9f, 0.2f, 0.2f)));
+    }
 
     for (auto & marker : markers.markers) {
       marker.header.stamp = stamp;
@@ -400,8 +409,10 @@ private:
     std::vector<geometry_msgs::msg::TransformStamped> transforms;
     transforms.push_back(toTransformStamped(
       "ego_base", "camera_link", T_ego_camera_, this->now()));
-    transforms.push_back(toTransformStamped(
-      "qr_tag", "target_base", T_target_tag_.inverse(), this->now()));
+    if (publish_simulated_target_ && publish_qr_) {
+      transforms.push_back(toTransformStamped(
+        "qr_tag", "target_base", T_target_tag_.inverse(), this->now()));
+    }
     static_tf_broadcaster_->sendTransform(transforms);
   }
 
@@ -416,8 +427,10 @@ private:
     std::vector<geometry_msgs::msg::TransformStamped> transforms;
     transforms.push_back(toTransformStamped(
       "odom", "ego_base", T_odom_ego_, stamp));
-    transforms.push_back(toTransformStamped(
-      "camera_link", "qr_tag", T_camera_tag_, stamp));
+    if (publish_simulated_target_ && publish_qr_) {
+      transforms.push_back(toTransformStamped(
+        "camera_link", "qr_tag", T_camera_tag_, stamp));
+    }
     tf_broadcaster_->sendTransform(transforms);
   }
 
@@ -470,6 +483,8 @@ private:
   double body_height_{0.40};
   double cone_bus_{0.08};
   double qr_pose_noise_std_{0.005};
+  bool publish_qr_{true};
+  bool publish_simulated_target_{true};
   double camera_x_{0.35};
   double camera_y_{0.0};
   double camera_z_{0.20};

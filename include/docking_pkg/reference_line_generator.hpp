@@ -36,6 +36,11 @@ public:
     double ego_speed,
     const Trajectory & predicted_target) const;
 
+  // 车体相对模式下，从自车当前原点生成本周期的五次样条参考路径。
+  Path generateBodyRelativePath(
+    const Pose2D & ego_pose,
+    const DockingGoal & goal) const;
+
   double desired_center_distance() const
   {
     const double geometric =

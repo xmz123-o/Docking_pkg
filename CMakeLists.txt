@@ -85,14 +85,25 @@ install(TARGETS
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 
+install(PROGRAMS
+  scripts/aruco_to_docking_adapter.py
+  scripts/hybrid_target_bridge.py
+  scripts/odom_docking_controller.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 install(DIRECTORY include/ DESTINATION include)
-install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY config launch docs DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
+  find_package(ament_cmake_pytest REQUIRED)
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
+  ament_add_pytest_test(test_hybrid_target_bridge
+    test/test_hybrid_target_bridge.py
+  )
 endif()
 
 ament_package()

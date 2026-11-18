@@ -10,11 +10,11 @@
 | --- | --- |
 | `target_state_estimator` | 4 状态常速度 Kalman，估计目标 `x, y, vx, vy`，再由速度估计航向/横摆角速度 |
 | `target_predictor` | CTRV（Constant Turn Rate and Velocity）预测，`omega` 真正参与目标未来位置与朝向积分 |
-| `reference_line_generator` | 动态对接时间 `td`：从预测轨迹中搜索自车在自身速度/加速度/减速度约束下可到达的最早对接位姿 |
+| `reference_line_generator` | 生成参考路径；车体系模式使用五次样条连接自车当前原点与目标后方对接点 |
 | `local_planner` | 支持 Cartesian 和 Frenet 局部规划；Frenet 偏移曲线使用 `dl/ds`，起点横向导数来自自车与参考线的实际航向差，并计算真实偏移曲率 |
 | `speed_planner` | 沿路径生成速度剖面：最大加速度、最大减速度、终点不越界、加速度输出，并支持目标到达时间 `td` 约束 |
 | `docking_state_machine` | 根据相对纵向距离和目标速度计算追赶速度：目标在前方时施加追赶余量，接近后收敛到目标速度，完成末端对接 |
-| `differential_controller` | 纯追踪/PI 式前轮转弯曲率到差速轮速，输出左/右轮角速度 |
+| `differential_controller` | 五次样条预瞄纯追踪、相对速度前馈和末端位姿收敛，输出左/右轮角速度 |
 | `docking_planner_node` | ROS 2 节点，订阅 odom 下的自车/目标位姿，滚动重规划、发布路径/轨迹/状态/轮速 |
 | `qr_target_adapter_node` | 二维码适配节点：把 `camera -> tag` 相对位姿通过 TF 转换到 `odom -> target_base`，再发布 `/target/pose` |
 | `demo_sim_node` | 完整仿真节点：模拟目标运动、自车差速运动、带噪声的“定位 XY”输出，发布车体/锥套可视化 Marker 与 TF |
@@ -32,6 +32,18 @@
 由上述参数得到的理想中心距：
 
 `target_length/2 + ego_length/2 m`
+
+二维码固定在目标车后壁中心时，默认启用：
+
+```yaml
+position_processor:
+  tag_on_rear_face: true
+docking:
+  auto_face_contact: true
+```
+
+程序会自动计算 `tag_x=-target_length/2=-0.26 m`，并令对接中心距为
+`(target_length+ego_length)/2=0.52 m`，对应目标车后壁与自车前壁相贴。
 
 动态对接时间 `td` 的选取方式：在目标 CTRV 预测轨迹上逐点计算目标对接位姿，并用 `minimumTravelTime(effective_distance, v_ego, v_target, a_max, d_max, v_max)` 判断自车能否在该时刻之前到达。`effective_distance` 在直线距离基础上加入少量转角惩罚。选择第一个满足约束的预测点作为本次滚动规划的对接目标，`SpeedPlanner` 再按 `td` 生成满足目标到达时间约束的速度剖面。
 
@@ -70,12 +82,19 @@ source install/setup.bash
 # 仅规划节点，接收真实定位
 ros2 launch Docking_pkg docking_planner.launch.py
 
-# 闭环仿真：目标沿曲线运动，自车由 wheel_cmd 积分驱动
-ros2 launch Docking_pkg docking_sim.launch.py
+# 闭环仿真：目标初始在自车斜前方，沿固定 odom +X 方向直线运动
+ros2 launch Docking_pkg docking_sim.launch.py initial_x:=7.0 initial_y:=1.8
 
 # 闭环仿真 + RViz 可视化
-ros2 launch Docking_pkg docking_rviz.launch.py
+ros2 launch Docking_pkg docking_rviz.launch.py initial_x:=7.0 initial_y:=1.8
+
+# 真实 ArUco 目标 + 仿真自车轮速/横摆角 + RViz
+ros2 launch Docking_pkg docking_aruco_rviz.launch.py \
+  video_device:=/dev/video0 primary_id:=0 marker_length:=0.08
 ```
+
+真实二维码联调的完整步骤见
+[`docs/aruco_rviz_simulation.md`](docs/aruco_rviz_simulation.md)。
 
 `docking_rviz.launch.py` 会启动：
 
@@ -124,6 +143,13 @@ odom -> ego_base -> camera_link -> qr_tag -> target_base
 
 规划器只接收 `odom` 下的 `/target/pose`，内部不再直接处理相机坐标系。
 
+注意：当前 `body_frame_planning: true` 的车体系模式使用
+`/qr/tag_position`、`/ego/twist` 和 `/ego/yaw`，不依赖
+`/target/pose`。真实 ArUco 模式由
+`docking_aruco_rviz.launch.py` 关闭仿真二维码和目标，只保留仿真自车运动。
+第一条有效二维码通过 `hybrid_target_bridge.py` 锁定到 `odom`，之后桥接节点
+根据虚拟自车运动生成新的相对观测，构成真实目标初始化、虚拟自车追踪的闭环。
+
 ## 速度规划与追赶逻辑
 
 当目标在前方时，状态机用目标航向投影计算纵向间距：
@@ -140,6 +166,31 @@ ego_speed_cmd = clip(target_speed + closing_speed, 0, max_ego_speed)
 ```
 
 因此目标越远，自车速度高于目标速度的追赶余量越大；接近到目标尾部时，追赶余量自动收敛，最后速度匹配目标速度，进入 `ALIGN / FINAL_DOCK / DOCKED`。相关参数在 `docking` 段里的 `catch_up_gain`、`max_closure_speed`、`min_closure_speed`。
+
+## 车体系五次样条路径
+
+当前默认 `body_frame_planning: true`。每个控制周期都把自车当前中心定义为
+`(0,0)`、当前车头方向定义为局部 `+X`，目标后方对接点为：
+
+```text
+goal_x = target.x - desired_center_distance * cos(target.yaw)
+goal_y = target.y - desired_center_distance * sin(target.yaw)
+```
+
+`ReferenceLineGenerator::generateBodyRelativePath()` 对 `x(u)` 和 `y(u)` 分别
+拟合五次多项式，并约束起点和终点的一阶、二阶导数。起点位置为自车原点、起点
+切向沿自车当前车头方向，终点位置为动态对接点、终点切向为估计的目标航向。
+因此路径的位置、航向和曲率均连续，能够比原来的直线路径更早、更平滑地转向。
+
+控制器沿五次样条选择预瞄点进行纯追踪；纵向速度使用目标相对速度前馈，保持
+追赶速度。剩余对接距离小于
+`control.body_terminal_transition_distance` 时，切换为目标中心方位与目标航向
+收敛，避免短路径曲率放大二维码噪声。
+
+第一版仍然假设目标只沿局部 `+X` 直线运动，因此车体系估计器输出
+`target.yaw = 0`。当自车逐渐与目标方向对齐后，该假设与目标直行条件一致。
+如果以后需要任意方向的斜线目标，应增加目标航向观测，而不能把带有自车运动的
+相对速度方向直接当作目标航向。
 
 ## 提前对准
 

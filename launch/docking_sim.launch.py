@@ -2,13 +2,19 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
 def generate_launch_description():
     pkg_dir = get_package_share_directory("Docking_pkg")
     config_file = os.path.join(pkg_dir, "config", "docking_planner.yaml")
-    rviz_config = os.path.join(pkg_dir, "config", "docking.rviz")
+    initial_x = LaunchConfiguration("initial_x")
+    initial_y = LaunchConfiguration("initial_y")
+    target_speed = LaunchConfiguration("target_speed")
+    body_frame_planning = LaunchConfiguration("body_frame_planning")
+    planning_frame = LaunchConfiguration("planning_frame")
 
     simulator = Node(
         package="Docking_pkg",
@@ -20,10 +26,10 @@ def generate_launch_description():
                 "sim.ego_x": 0.0,
                 "sim.ego_y": 0.0,
                 "sim.ego_yaw": 0.0,
-                "sim.target_x": 7.0,
-                "sim.target_y": 0.0,
+                "sim.target_x": initial_x,
+                "sim.target_y": initial_y,
                 "sim.target_yaw": 0.0,
-                "sim.target_speed": 0.35,
+                "sim.target_speed": target_speed,
                 "sim.target_yaw_rate": 0.0,
                 "sim.wheel_radius": 0.254,
                 "sim.wheel_track": 0.60,
@@ -54,7 +60,7 @@ def generate_launch_description():
         output="screen",
         parameters=[
             {
-                "planning_frame": "ego_base",
+                "planning_frame": planning_frame,
                 "qr_tag_frame": "qr_tag",
                 "target_base_frame": "target_base",
                 "publish_twist": False,
@@ -68,7 +74,32 @@ def generate_launch_description():
         executable="docking_planner_node",
         name="docking_planner_node",
         output="screen",
-        parameters=[config_file],
+        parameters=[
+            config_file,
+            {
+                "body_frame_planning": body_frame_planning,
+                "planning_frame": planning_frame,
+            },
+        ],
     )
 
-    return LaunchDescription([simulator, adapter, planner])
+    return LaunchDescription([
+        DeclareLaunchArgument(
+            "initial_x", default_value="7.0",
+            description="目标车相对自车的初始 X 坐标，单位 m"),
+        DeclareLaunchArgument(
+            "initial_y", default_value="1.8",
+            description="目标车相对自车的初始 Y 坐标，单位 m"),
+        DeclareLaunchArgument(
+            "target_speed", default_value="0.35",
+            description="目标车沿 odom +X 的直线速度，单位 m/s"),
+        DeclareLaunchArgument(
+            "body_frame_planning", default_value="true",
+            description="是否使用 ego_base 车体系规划"),
+        DeclareLaunchArgument(
+            "planning_frame", default_value="ego_base",
+            description="规划坐标系；odom 模式应设置为 odom"),
+        simulator,
+        adapter,
+        planner,
+    ])

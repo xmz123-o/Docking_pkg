@@ -20,14 +20,18 @@ bool PositionProcessor::process(const QrPosition & qr,double target_yaw_estimate
   const double tag_x_ego = cc * qr.x - cs * qr.y + params_.camera_x;
   const double tag_y_ego = cs * qr.x + cc * qr.y + params_.camera_y;
 
-  // tag -> target base: target center = tag origin - R(target_yaw) * tag_offset
-  // First version assumes the tag is mounted with a known fixed yaw relative
-  // to the target base. Do not feed the estimated target heading back into the
-  // position offset, otherwise the estimate can become self-excited.
+  // tag -> target base: target center = tag origin -
+  // R(target_yaw) * R(tag_yaw) * tag_offset。
   const double tc = std::cos(params_.tag_yaw);
   const double ts = std::sin(params_.tag_yaw);
-  const double offset_x = tc * params_.tag_x - ts * params_.tag_y;
-  const double offset_y = ts * params_.tag_x + tc * params_.tag_y;
+  const double tag_offset_x = tc * params_.tag_x - ts * params_.tag_y;
+  const double tag_offset_y = ts * params_.tag_x + tc * params_.tag_y;
+  const double target_cos = std::cos(target_yaw_estimate);
+  const double target_sin = std::sin(target_yaw_estimate);
+  const double offset_x =
+    target_cos * tag_offset_x - target_sin * tag_offset_y;
+  const double offset_y =
+    target_sin * tag_offset_x + target_cos * tag_offset_y;
 
   target_in_ego->x = tag_x_ego - offset_x;
   target_in_ego->y = tag_y_ego - offset_y;
@@ -166,7 +170,7 @@ void TargetVelocityFilter::update(
     state_.vy = 0.0;
     state_.speed = 0.0;
     state_.yaw = 0.0;
-    state_.omega = omega_hint;
+    state_.omega = 0.0;
     return;
   }
 
@@ -190,9 +194,8 @@ void TargetVelocityFilter::update(
   state_.y = y;
   state_.speed = speed;
 
-  // First version: the target is required to move in a straight line along the
-  // local +X axis. QR position alone cannot reliably observe target heading,
-  // so keep the target heading fixed until a heading sensor is available.
+  // 第一版车体系模式假设目标沿当前局部 +X 直行。二维码位置和
+  // 相对速度不能稳定给出全局目标航向，因此这里不包装成伪测量。
   (void)ego_speed;
   (void)omega_hint;
   state_.yaw = 0.0;

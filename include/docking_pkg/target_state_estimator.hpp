@@ -15,15 +15,15 @@ class TargetStateEstimator
 public:
   struct Params
   {
-    double measurement_noise_position{0.0001};  // 平方米
+    double measurement_noise_position{0.0001};
     double process_noise_position{0.02};
     double process_noise_velocity{0.05};
-    double max_plausible_velocity{15.0};  // 米/秒
-    double min_speed_for_heading{0.08};  // 米/秒
-    double omega_window_time{2.5};       // 秒，滑动窗口回归
+    double max_plausible_velocity{15.0};
+    double min_speed_for_heading{0.08};
+    double omega_window_time{2.5};       // 滑动窗口回归
     double omega_filter_alpha{0.08};     // 0~1，横摆角速度估计低通滤波系数
-    double omega_deadband{0.04};         // 弧度/秒
-    double max_plausible_omega{0.8};     // 弧度/秒
+    double omega_deadband{0.04};
+    double max_plausible_omega{0.8};
     bool use_measured_orientation{true};
   };
 
@@ -55,8 +55,7 @@ private:
   //状态协方差矩阵
   Eigen::Matrix4d P_;
 
-  // (时间戳, 展开航向角) 滑动窗口，用于估计
-  // 横摆角速度，避免对两帧含噪测量直接差分。
+  // (时间戳, 展开航向角) 滑动窗口，用于估计横摆角速度，避免对两帧含噪测量直接差分
   std::deque<std::pair<double, double>> yaw_history_;
   bool have_last_yaw_{false};
   double last_yaw_raw_{0.0};
@@ -66,4 +65,4 @@ private:
   bool have_last_update_time_{false};
 };
 
-}  // 命名空间 docking
+}

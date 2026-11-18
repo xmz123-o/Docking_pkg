@@ -38,6 +38,23 @@ public:
     double body_k_lateral{1.5};
     double body_k_lateral_vel{0.6};
     double body_max_closure{0.30};
+    double body_terminal_transition_distance{0.25};
+    double body_terminal_heading_gain{1.20};
+    double body_terminal_lateral_gain{0.80};
+    double body_terminal_yaw_rate_gain{0.35};
+    double body_alignment_speed{0.20};
+    double body_alignment_approach_speed{0.40};
+    double body_alignment_bearing_gain{0.80};
+    double body_alignment_yaw_rate_gain{0.30};
+    double body_alignment_heading_tolerance{0.08};
+    double body_alignment_lateral_tolerance{0.04};
+    double body_alignment_standoff_offset{0.18};
+    double body_alignment_standoff_tolerance{0.04};
+    double body_follow_max_speed{0.50};
+    double body_follow_max_angular{0.35};
+    double body_follow_heading_gain{0.80};
+    double body_follow_bearing_gain{0.60};
+    double body_follow_yaw_rate_gain{0.30};
   };
 
   DifferentialController();
@@ -64,6 +81,29 @@ public:
     double ego_speed,
     const TargetState & target,
     double desired_center_distance) const;
+
+  // 跟踪车体系五次样条，同时用目标相对速度做纵向速度前馈。
+  WheelCommand computeBodyRelativePath(
+    double ego_speed,
+    const TargetState & target,
+    const Path & path,
+    double desired_center_distance,
+    double ego_yaw_rate) const;
+
+  // 近距离“先对准、再压入”控制。
+  WheelCommand computeBodyAlignment(
+    double ego_speed,
+    const TargetState & target,
+    double desired_center_distance,
+    double ego_yaw_rate,
+    int * phase) const;
+
+  // 首次对接后的低速跟随：只追最终对接点，不允许反向绕行。
+  WheelCommand computePostDockFollow(
+    double ego_speed,
+    const TargetState & target,
+    double desired_center_distance,
+    double ego_yaw_rate) const;
 
 private:
   WheelCommand fromBodyVelocity(double linear, double angular) const;

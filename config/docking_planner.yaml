@@ -8,8 +8,12 @@
       yaw_rate_filter_alpha: 0.2
       max_yaw_rate: 2.0
       yaw_rate_deadband: 0.01
+      # 真实相机没有和仿真自车一起旋转时置 false。
+      compensate_frame_rotation: true
 
     position_processor:
+      # 二维码贴在目标车后壁中心，tag_x 由目标车长自动计算。
+      tag_on_rear_face: true
       camera_x: 0.35
       camera_y: 0.0
       camera_yaw: 0.0
@@ -22,6 +26,11 @@
     publish_markers: true
 
     target:
+      use_world_heading_visualization: false
+      visual_world_heading: 0.0
+      use_world_heading_for_control: false
+      control_world_heading: 0.0
+      heading_control_distance: 1.2
       measurement_noise_position: 0.0001
       process_noise_position: 0.02
       process_noise_velocity: 2.0
@@ -87,9 +96,14 @@
       catch_up_gain: 0.8
       max_closure_speed: 0.6
       min_closure_speed: 0.03
+      hold_zero_when_docked: false
+      # 前后端面接触时，中心距 = (目标车长 + 自车长) / 2。
+      auto_face_contact: true
 
     vehicle:
       target_length: 0.52
+      target_width: 0.45
+      target_height: 0.40
       ego_length: 0.52
       cone_bus_length: 0.08
       docking_depth: 0.05
@@ -111,3 +125,20 @@
       body_k_lateral: 1.5
       body_k_lateral_vel: 0.6
       body_max_closure: 0.30
+      body_terminal_transition_distance: 0.25
+      body_terminal_heading_gain: 1.2
+      body_terminal_lateral_gain: 0.8
+      body_terminal_yaw_rate_gain: 0.35
+      body_alignment_speed: 0.20
+      body_alignment_approach_speed: 0.40
+      body_alignment_bearing_gain: 0.8
+      body_alignment_yaw_rate_gain: 0.30
+      body_alignment_heading_tolerance: 0.08
+      body_alignment_lateral_tolerance: 0.04
+      body_alignment_standoff_offset: 0.18
+      body_alignment_standoff_tolerance: 0.04
+      body_follow_max_speed: 0.50
+      body_follow_max_angular: 0.35
+      body_follow_heading_gain: 0.80
+      body_follow_bearing_gain: 0.60
+      body_follow_yaw_rate_gain: 0.30

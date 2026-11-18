@@ -63,9 +63,12 @@ DockingState DockingStateMachine::update(
 
   bool docked = false;
   if (docked_latch_) {
+    const double minimum_docked_distance = std::max(
+      0.0, params_.docked_distance - params_.docked_release_margin);
     docked =
       state_.center_distance <
         params_.docked_distance + params_.docked_release_margin &&
+      state_.center_distance > minimum_docked_distance &&
       std::abs(state_.lateral_error) <
         params_.docked_lateral_error + params_.docked_release_margin &&
       state_.heading_error <

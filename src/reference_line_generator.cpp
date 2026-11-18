@@ -215,6 +215,17 @@ ReferenceLineGenerator::ReferenceLineGenerator(
 {
 }
 
+Path ReferenceLineGenerator::generateBodyRelativePath(
+  const Pose2D & ego_pose,
+  const DockingGoal & goal) const
+{
+  return sampleReferencePath(
+    ego_pose,
+    goal,
+    params_,
+    params_.sample_count);
+}
+
 ReferenceLine ReferenceLineGenerator::generate(
   const Pose2D & ego_pose,
   double ego_speed,
